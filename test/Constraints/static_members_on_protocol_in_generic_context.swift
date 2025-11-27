@@ -175,14 +175,14 @@ test_combo(.genericFn(42)) // expected-error {{global function 'test_combo' requ
 
 /* Invalid result types */
 
-extension P { // expected-note 13 {{missing same-type requirement on 'Self'}} {{12-12= where Self == <#Type#>}}
+extension P { // expected-note 14 {{missing same-type requirement on 'Self'}} {{12-12= where Self == <#Type#>}}
   static func generic<T>(_: T) -> T { fatalError() }
   static func genericWithReqs<T: Collection>(_: T) -> Q where T.Element == Q { // expected-note {{required by static method 'genericWithReqs' where 'T' = '()'}}
     fatalError()
   }
 }
 
-extension P { // expected-note 6 {{missing same-type requirement on 'Self'}}
+extension P { // expected-note 7 {{missing same-type requirement on 'Self'}}
   static var invalidProp: Int { 42 }
   static var selfProp: Self { fatalError() }
   static func invalidMethod() -> Int { 42 }
@@ -213,8 +213,8 @@ _ = P.generic(S()).other // expected-error {{static member 'generic' cannot be u
 _ = P.generic(G<Int>()) // expected-error {{static member 'generic' cannot be used on protocol metatype '(any P).Type'}}
 _ = P.genericWithReqs([S()]) // expected-error {{static member 'genericWithReqs' cannot be used on protocol metatype '(any P).Type'}}
 _ = P.genericWithReqs([42])
-// expected-error@-1 {{static member 'genericWithReqs' cannot be used on protocol metatype '(any P).Type'}}
-// expected-error@-2 {{cannot convert value of type 'Int' to expected element type 'any Q'}}
+// expected-error@-1 {{cannot convert value of type 'Int' to expected element type 'any Q'}}
+// expected-error@-2 {{static member 'genericWithReqs' cannot be used on protocol metatype '(any P).Type'}}
 _ = P.genericWithReqs(())
 // expected-error@-1 {{type '()' cannot conform to 'Collection'}}
 // expected-error@-2 {{static member 'genericWithReqs' cannot be used on protocol metatype '(any P).Type'}}
@@ -255,27 +255,28 @@ test(.genericWithReqs([42]))
 test(.genericWithReqs(()))
 // expected-error@-1 {{contextual member reference to static method 'genericWithReqs' requires 'Self' constraint in the protocol extension}}
 
-test_combo(.doesntExist) // expected-error {{reference to member 'doesntExist' cannot be resolved without a contextual type}}
-test_combo(.doesnt.exist()) // expected-error {{reference to member 'doesnt' cannot be resolved without a contextual type}}
+test_combo(.doesntExist) // expected-error {{type 'P & Q' has no member 'doesntExist'}}
+test_combo(.doesnt.exist()) // expected-error {{type 'P & Q' has no member 'doesnt'}}
 test_combo(.invalidProp)
 // expected-error@-1 {{contextual member reference to static property 'invalidProp' requires 'Self' constraint in the protocol extension}}
-test_combo(.invalidProp.doesntExist) //FIXME: Should be reporting that Int has no doesntExist if P&Q lookup fixed
-// expected-error@-1{{type 'Q' has no member 'invalidProp'}}
+test_combo(.invalidProp.doesntExist)
+// expected-error@-1{{contextual member reference to static property 'invalidProp' requires 'Self' constraint in the protocol extension}}
+// expected-error@-2{{value of type 'Int' has no member 'doesntExist'}}
 test_combo(.invalidMethod())
-// expected-error@-1 {{contextual member reference to static method 'invalidMethod()' requires 'Self' constraint in the protocol extension}}
+// expected-error@-1{{contextual member reference to static method 'invalidMethod()' requires 'Self' constraint in the protocol extension}}
 test_combo(.generic(42))
-// expected-error@-1 {{contextual member reference to static method 'generic' requires 'Self' constraint in the protocol extension}}
+// expected-error@-1{{contextual member reference to static method 'generic' requires 'Self' constraint in the protocol extension}}
 test_combo(.generic(S()))
-// expected-error@-1 {{contextual member reference to static method 'generic' requires 'Self' constraint in the protocol extension}}
+// expected-error@-1{{contextual member reference to static method 'generic' requires 'Self' constraint in the protocol extension}}
 test_combo(.generic(G<Int>()))
-// expected-error@-1 {{contextual member reference to static method 'generic' requires 'Self' constraint in the protocol extension}}
+//expected-error@-1 {{contextual member reference to static method 'generic' requires 'Self' constraint in the protocol extension}}
 test_combo(.genericWithReqs([S()]))
-// expected-error@-1 {{contextual member reference to static method 'genericWithReqs' requires 'Self' constraint in the protocol extension}}
-test_combo(.genericWithReqs([42])) // FIXME: fix for P&Q membership reduces ambiquity
-// expected-error@-1 {{failed to produce diagnostic for expression}}
-// {{contextual member reference to static method 'genericWithReqs' requires 'Self' constraint in the protocol extension}}
+// expected-error@-1{{contextual member reference to static method 'genericWithReqs' requires 'Self' constraint in the protocol extension}}
+test_combo(.genericWithReqs([42]))
+// expected-error@-1{{contextual member reference to static method 'genericWithReqs' requires 'Self' constraint in the protocol extension}}
+// expected-error@-2{{cannot convert value of type 'Int' to expected element type 'any Q'}}
 test_combo(.genericWithReqs(()))
-// expected-error@-1 {{contextual member reference to static method 'genericWithReqs' requires 'Self' constraint in the protocol extension}}
+// expected-error@-1{{contextual member reference to static method 'genericWithReqs' requires 'Self' constraint in the protocol extension}}
 
 protocol TestWithAssoc {
   associatedtype U
