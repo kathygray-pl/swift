@@ -2298,6 +2298,12 @@ void BindingSet::promoteBindings() {
   unsigned subtypeCount = 0;
   std::optional<PotentialBinding> promotedSubtype;
 
+  unsigned fallbackCount = 0;
+  std::optional<PotentialBinding> promotedFallback;
+
+  // we shouldn't need to promote an exact
+  unsigned exactCount = 0;
+
   bool considerSupertypes =
       Info.SupertypeOf.empty() &&
       Info.SupertypeDelay.empty();
@@ -2355,15 +2361,49 @@ void BindingSet::promoteBindings() {
       break;
 
     case AllowedBindingKind::Exact:
+        if (binding.BindingType->isVoid())
+          ++exactCount;
+        break;
+
     case AllowedBindingKind::Fallback:
+      if (binding.BindingType->isVoid()) {
+        ++fallbackCount;
+        promotedFallback = binding;
+      }
       break;
+    }
+  }
+
+  // In the fallback case, we want to consider more subtypes to promote
+  if (fallbackCount > 0 && (subtypeCount == 0 && supertypeCount == 0)) {
+    llvm::errs() << "We're looking at bindings again for fallback. the size of bindings is " << Bindings.size() << "\n";
+    for (const auto binding : Bindings) {
+      switch (binding.Kind) {
+        case AllowedBindingKind::Subtypes:
+          if (considerSubtypes) {
+            subtypeCount++;
+            promotedSubtype = binding;
+          }
+          break;
+        case AllowedBindingKind::Supertypes:
+        case AllowedBindingKind::Exact:
+        case AllowedBindingKind::Fallback:
+          break;
+      }
     }
   }
 
   auto promoteBinding = [&](PotentialBinding &&binding) {
     // This binding will subsume all existing non-fallback bindings.
+    // but we clear them to save the work of comparing each binding
+    // Note: we could consider an assert here if we are concerned of
+    // promotion introducing a conflict.
+    Bindings.clear();
     binding.Kind = AllowedBindingKind::Exact;
     addBinding(binding);
+
+    if (binding.BindingType->isVoid())
+      return;
 
     // If this is a type variable representing closure result,
     // which is on the right-side of some relational constraint
@@ -2395,6 +2435,13 @@ void BindingSet::promoteBindings() {
     promoteBinding(*std::move(promotedSubtype));
   };
 
+  auto promoteFallbackBinding = [&](const char *reason) {
+    LLVM_DEBUG(llvm::dbgs() << "Promote fallback to exact, " << reason << "\n";
+               dump(llvm::dbgs(), 0);
+               llvm::dbgs() << "\n");
+    promoteBinding(*std::move(promotedFallback));
+  };
+
   // This is in service of a hack, see below.
   auto labelsMismatch = [&](TupleType *lhsTuple, TupleType *rhsTuple) -> bool {
     if (lhsTuple->getNumElements() != rhsTuple->getNumElements())
@@ -2412,7 +2459,33 @@ void BindingSet::promoteBindings() {
     return false;
   };
 
-  if (subtypeCount == 1) {
+  if (fallbackCount == 1 && exactCount == 1) {
+    // First handle the case where Void is the only case
+    ASSERT(subtypeCount == 0 && supertypeCount == 0);
+    promoteFallbackBinding("onlyVoid");
+    return;
+  } else if (fallbackCount == 1) {
+    // Then consider cases where void should be promoted or a subtype should be
+    llvm::errs() << "promoteBindings of fallback binding\n";
+    if (subtypeCount >= 1) {
+      llvm::errs() << "Yes there is at least one subtype\n";
+      if (promotedSubtype->getSource()->getKind() == ConstraintKind::Bind) {
+        promoteSubtypeBinding("bind not void");
+        return;
+      }
+      if (TypeVar->getImpl().isClosureResultType()) {
+        promoteSubtypeBinding("closure result");
+        return;
+      }
+    }
+    if (supertypeCount == 1) {
+      llvm::errs() << "Yes, there is a supertype and not a subtype, let's see what breaks\n";
+      promoteSupertypeBinding("superWoo");
+      return;
+    }
+    llvm::errs() << "well then, this is a fine pickle\n";
+  } else if (subtypeCount == 1) {
+    // Then consider cases where potential fallbacks are not relevant
     // First, handle the case where we have both a subtype and a supertype binding.
     if (supertypeCount == 1) {
       // If we have something like this:
